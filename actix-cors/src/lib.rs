@@ -41,7 +41,6 @@
 //! Cors middleware automatically handle *OPTIONS* preflight request.
 use std::collections::HashSet;
 use std::convert::TryFrom;
-use std::iter::FromIterator;
 use std::rc::Rc;
 use std::task::{Context, Poll};
 
@@ -202,18 +201,17 @@ impl Cors {
         let inner = Inner {
             origins: AllOrSome::default(),
             origins_str: None,
-            methods: HashSet::from_iter(
-                vec![
-                    Method::GET,
-                    Method::HEAD,
-                    Method::POST,
-                    Method::OPTIONS,
-                    Method::PUT,
-                    Method::PATCH,
-                    Method::DELETE,
-                ]
-                .into_iter(),
-            ),
+            methods: vec![
+                Method::GET,
+                Method::HEAD,
+                Method::POST,
+                Method::OPTIONS,
+                Method::PUT,
+                Method::PATCH,
+                Method::DELETE,
+            ]
+            .into_iter()
+            .collect::<HashSet<_>>(),
             headers: AllOrSome::All,
             expose_hdrs: None,
             max_age: None,
@@ -584,7 +582,7 @@ impl Inner {
                     AllOrSome::Some(ref allowed_origins) => allowed_origins
                         .get(origin)
                         .map(|_| ())
-                        .ok_or_else(|| CorsError::OriginNotAllowed),
+                        .ok_or(CorsError::OriginNotAllowed),
                 };
             }
             Err(CorsError::BadOrigin)
@@ -632,7 +630,7 @@ impl Inner {
                         .methods
                         .get(&method)
                         .map(|_| ())
-                        .ok_or_else(|| CorsError::MethodNotAllowed);
+                        .ok_or(CorsError::MethodNotAllowed);
                 }
             }
             Err(CorsError::BadRequestMethod)
@@ -723,38 +721,38 @@ where
                 None
             };
 
-            let res = HttpResponse::Ok()
-                .if_some(self.inner.max_age.as_ref(), |max_age, resp| {
-                    let _ = resp.header(
-                        header::ACCESS_CONTROL_MAX_AGE,
-                        format!("{}", max_age).as_str(),
-                    );
-                })
-                .if_some(headers, |headers, resp| {
-                    let _ = resp.header(header::ACCESS_CONTROL_ALLOW_HEADERS, headers);
-                })
-                .if_some(
-                    self.inner.access_control_allow_origin(req.head()),
-                    |origin, resp| {
-                        let _ = resp.header(header::ACCESS_CONTROL_ALLOW_ORIGIN, origin);
-                    },
-                )
-                .if_true(self.inner.supports_credentials, |resp| {
-                    resp.header(header::ACCESS_CONTROL_ALLOW_CREDENTIALS, "true");
-                })
-                .header(
-                    header::ACCESS_CONTROL_ALLOW_METHODS,
-                    &self
-                        .inner
-                        .methods
-                        .iter()
-                        .fold(String::new(), |s, v| s + "," + v.as_str())
-                        .as_str()[1..],
-                )
-                .finish()
-                .into_body();
+            let mut resp = HttpResponse::Ok();
+            if let Some(max_age) = self.inner.max_age.as_ref() {
+                let _ = resp.append_header((
+                    header::ACCESS_CONTROL_MAX_AGE,
+                    format!("{}", max_age).as_str(),
+                ));
+            }
+            if let Some(headers) = headers {
+                let _ =
+                    resp.append_header((header::ACCESS_CONTROL_ALLOW_HEADERS, headers));
+            }
+            if let Some(origin) = self.inner.access_control_allow_origin(req.head()) {
+                let _ =
+                    resp.append_header((header::ACCESS_CONTROL_ALLOW_ORIGIN, origin));
+            }
+            if self.inner.supports_credentials {
+                resp.append_header((header::ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
+            }
 
-            Either::Left(ok(req.into_response(res)))
+            let resp = resp.append_header((
+                header::ACCESS_CONTROL_ALLOW_METHODS,
+                &self
+                    .inner
+                    .methods
+                    .iter()
+                    .fold(String::new(), |s, v| s + "," + v.as_str())
+                    .as_str()[1..],
+            ))
+            .finish()
+            .into_body();
+
+            Either::Left(ok(req.into_response(resp)))
         } else {
             if req.headers().contains_key(&header::ORIGIN) {
                 // Only check requests with a origin header.

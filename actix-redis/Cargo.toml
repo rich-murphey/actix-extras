@@ -21,32 +21,32 @@ path = "src/lib.rs"
 default = ["web"]
 
 # actix-web integration
-web = ["actix-http/actors", "actix-service", "actix-web", "actix-session/cookie-session", "rand", "serde", "serde_json"]
+web = ["actix-service", "actix-web", "actix-session/cookie-session", "rand", "serde", "serde_json"]
 
 [dependencies]
-actix = "0.10.0-alpha.2"
-actix-utils = "1.0.3"
+actix = { version = "0.11.0-beta.2", features = [ "resolver" ] }
+actix-utils = "2.0.0"
 
-log = "0.4.6"
-backoff = "0.1.5"
-derive_more = "0.99.2"
-futures = "0.3.1"
-redis-async = "0.6.1"
-actix-rt = "1.0.0"
-time = "0.2.9"
-tokio = "0.2.6"
-tokio-util = "0.2.0"
+log = "0.4.14"
+backoff = "0.3.0"
+derive_more = "0.99.11"
+futures = "0.3.13"
+redis-async = "0.9.0"
+actix-rt = "2.1.0"
+time = "0.2.25"
+tokio = "1.2.0"
+tokio-util = "0.6.3"
 
 # actix-session
-actix-web = { version = "3.0.0-alpha.1", optional = true }
-actix-http = { version = "2.0.0-alpha.2", optional = true }
-actix-service = { version = "1.0.0", optional = true }
-actix-session = { version = "0.4.0-alpha.1", optional = true }
-rand = { version = "0.7.0", optional = true }
-serde = { version = "1.0.101", optional = true, features = ["derive"] }
-serde_json = { version = "1.0.40", optional = true }
+actix-web = { version = "4.0.0-beta.3", optional = true }
+actix-http = { version = "3.0.0-beta.3", optional = true }
+actix-service = { version = "2.0.0-beta.4", optional = true }
+actix-session = { path = "../actix-session", optional = true }
+rand = { version = "0.8.3", optional = true }
+serde = { version = "1.0.123", optional = true, features = ["derive"] }
+serde_json = { version = "1.0.63", optional = true }
 
 [dev-dependencies]
-env_logger = "0.7"
-serde_derive = "1.0"
-serde_json = "1.0"
+env_logger = "0.8.3"
+serde_derive = "1.0.123"
+serde_json = "1.0.63"

@@ -120,19 +120,14 @@ where
     }
 }
 
-impl<S, B, T, F, O> Transform<S> for HttpAuthentication<T, F>
+impl<S, B, T, F, O> Transform<S, ServiceRequest> for HttpAuthentication<T, F>
 where
-    S: Service<
-            Request = ServiceRequest,
-            Response = ServiceResponse<B>,
-            Error = Error,
-        > + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
     F: Fn(ServiceRequest, T) -> O + 'static,
     O: Future<Output = Result<ServiceRequest, Error>> + 'static,
     T: AuthExtractor + 'static,
 {
-    type Request = ServiceRequest;
     type Response = ServiceResponse<B>;
     type Error = Error;
     type Transform = AuthenticationMiddleware<S, F, T>;
@@ -158,34 +153,26 @@ where
     _extractor: PhantomData<T>,
 }
 
-impl<S, B, F, T, O> Service for AuthenticationMiddleware<S, F, T>
+impl<S, B, F, T, O> Service<ServiceRequest> for AuthenticationMiddleware<S, F, T>
 where
-    S: Service<
-            Request = ServiceRequest,
-            Response = ServiceResponse<B>,
-            Error = Error,
-        > + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
     F: Fn(ServiceRequest, T) -> O + 'static,
     O: Future<Output = Result<ServiceRequest, Error>> + 'static,
     T: AuthExtractor + 'static,
 {
-    type Request = ServiceRequest;
     type Response = ServiceResponse<B>;
     type Error = S::Error;
     type Future = LocalBoxFuture<'static, Result<ServiceResponse<B>, Error>>;
 
-    fn poll_ready(
-        &mut self,
-        ctx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&self, ctx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.service
             .try_lock()
             .expect("AuthenticationMiddleware was called already")
             .poll_ready(ctx)
     }
 
-    fn call(&mut self, req: Self::Request) -> Self::Future {
+    fn call(&self, req: ServiceRequest) -> Self::Future {
         let process_fn = self.process_fn.clone();
         // Note: cloning the mutex, not the service itself
         let inner = self.service.clone();
@@ -193,7 +180,7 @@ where
         async move {
             let (req, credentials) = Extract::<T>::new(req).await?;
             let req = process_fn(req, credentials).await?;
-            let mut service = inner.lock().await;
+            let service = inner.lock().await;
             service.call(req).await
         }
         .boxed_local()
@@ -224,13 +211,9 @@ where
 {
     type Output = Result<(ServiceRequest, T), Error>;
 
-    fn poll(
-        mut self: Pin<&mut Self>,
-        ctx: &mut Context<'_>,
-    ) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
         if self.f.is_none() {
-            let req =
-                self.req.as_ref().expect("Extract future was polled twice!");
+            let req = self.req.as_ref().expect("Extract future was polled twice!");
             let f = T::from_service_request(req).map_err(Into::into);
             self.f = Some(f.boxed_local());
         }

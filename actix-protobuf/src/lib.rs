@@ -15,7 +15,7 @@ use actix_web::dev::{HttpResponseBuilder, Payload};
 use actix_web::error::{Error, PayloadError, ResponseError};
 use actix_web::http::header::{CONTENT_LENGTH, CONTENT_TYPE};
 use actix_web::{FromRequest, HttpMessage, HttpRequest, HttpResponse, Responder};
-use futures::future::{ready, FutureExt, LocalBoxFuture, Ready};
+use futures::future::{FutureExt, LocalBoxFuture};
 use futures::StreamExt;
 
 #[derive(Debug, Display)]
@@ -135,21 +135,14 @@ where
 }
 
 impl<T: Message + Default> Responder for ProtoBuf<T> {
-    type Error = Error;
-    type Future = Ready<Result<HttpResponse, Error>>;
-
-    fn respond_to(self, _: &HttpRequest) -> Self::Future {
+    fn respond_to(self, _: &HttpRequest) -> HttpResponse {
         let mut buf = Vec::new();
-        ready(
-            self.0
-                .encode(&mut buf)
-                .map_err(|e| Error::from(ProtoBufPayloadError::Serialize(e)))
-                .and_then(|()| {
-                    Ok(HttpResponse::Ok()
-                        .content_type("application/protobuf")
-                        .body(buf))
-                }),
-        )
+        if self.0.encode(&mut buf).is_err() {
+            return HttpResponse::InternalServerError().finish();
+        }
+        HttpResponse::Ok()
+            .content_type("application/protobuf")
+            .body(buf)
     }
 }
 
@@ -239,7 +232,7 @@ impl<T: Message + Default + 'static> Future for ProtoBufMessage<T> {
                     }
                 }
 
-                return Ok(<T>::decode(&mut body)?);
+                Ok(<T>::decode(&mut body)?)
             }
             .boxed_local(),
         );
@@ -253,7 +246,7 @@ pub trait ProtoBufResponseBuilder {
 
 impl ProtoBufResponseBuilder for HttpResponseBuilder {
     fn protobuf<T: Message>(&mut self, value: T) -> Result<HttpResponse, Error> {
-        self.header(CONTENT_TYPE, "application/protobuf");
+        self.append_header((CONTENT_TYPE, "application/protobuf"));
 
         let mut body = Vec::new();
         value

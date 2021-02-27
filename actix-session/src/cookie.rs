@@ -66,7 +66,7 @@ impl CookieSessionInner {
     fn new(key: &[u8], security: CookieSecurity) -> CookieSessionInner {
         CookieSessionInner {
             security,
-            key: Key::from_master(key),
+            key: Key::from(key),
             name: "actix-session".to_owned(),
             path: "/".to_owned(),
             domain: None,
@@ -100,7 +100,7 @@ impl CookieSessionInner {
         }
 
         if let Some(expires_in) = self.expires_in {
-            cookie.set_expires(OffsetDateTime::now() + expires_in);
+            cookie.set_expires(OffsetDateTime::now_utc() + expires_in);
         }
 
         if let Some(max_age) = self.max_age {
@@ -131,7 +131,7 @@ impl CookieSessionInner {
         let mut cookie = Cookie::named(self.name.clone());
         cookie.set_value("");
         cookie.set_max_age(Duration::zero());
-        cookie.set_expires(OffsetDateTime::now() - Duration::days(365));
+        cookie.set_expires(OffsetDateTime::now_utc() - Duration::days(365));
 
         let val = HeaderValue::from_str(&cookie.to_string())?;
         res.headers_mut().append(SET_COOKIE, val);
@@ -196,15 +196,13 @@ impl CookieSessionInner {
 /// use actix_session::CookieSession;
 /// use actix_web::{web, App, HttpResponse, HttpServer};
 ///
-/// fn main() {
-///     let app = App::new().wrap(
-///         CookieSession::signed(&[0; 32])
-///             .domain("www.rust-lang.org")
-///             .name("actix_session")
-///             .path("/")
-///             .secure(true))
-///         .service(web::resource("/").to(|| HttpResponse::Ok()));
-/// }
+/// let app = App::new().wrap(
+///     CookieSession::signed(&[0; 32])
+///         .domain("www.rust-lang.org")
+///         .name("actix_session")
+///         .path("/")
+///         .secure(true))
+///     .service(web::resource("/").to(|| HttpResponse::Ok()));
 /// ```
 pub struct CookieSession(Rc<CookieSessionInner>);
 

@@ -32,7 +32,7 @@ impl RedisSession {
     /// * `addr` - address of the redis server
     pub fn new<S: Into<String>>(addr: S, key: &[u8]) -> RedisSession {
         RedisSession(Rc::new(Inner {
-            key: Key::from_master(key),
+            key: Key::from(key),
             cache_keygen: Box::new(|key: &str| format!("session:{}", &key)),
             ttl: "7200".to_owned(),
             addr: RedisActor::start(addr),
@@ -103,14 +103,12 @@ impl RedisSession {
     }
 }
 
-impl<S, B> Transform<S> for RedisSession
+impl<S, B> Transform<S, ServiceRequest> for RedisSession
 where
-    S: Service<Request = ServiceRequest, Response = ServiceResponse<B>, Error = Error>
-        + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
     B: 'static,
 {
-    type Request = ServiceRequest;
     type Response = ServiceResponse<B>;
     type Error = S::Error;
     type InitError = ();
@@ -131,25 +129,23 @@ pub struct RedisSessionMiddleware<S: 'static> {
     inner: Rc<Inner>,
 }
 
-impl<S, B> Service for RedisSessionMiddleware<S>
+impl<S, B> Service<ServiceRequest> for RedisSessionMiddleware<S>
 where
-    S: Service<Request = ServiceRequest, Response = ServiceResponse<B>, Error = Error>
-        + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
     B: 'static,
 {
-    type Request = ServiceRequest;
     type Response = ServiceResponse<B>;
     type Error = Error;
     #[allow(clippy::type_complexity)]
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.service.borrow_mut().poll_ready(cx)
     }
 
-    fn call(&mut self, mut req: ServiceRequest) -> Self::Future {
-        let mut srv = self.service.clone();
+    fn call(&self, mut req: ServiceRequest) -> Self::Future {
+        let srv = self.service.clone();
         let inner = self.inner.clone();
 
         Box::pin(async move {
@@ -233,7 +229,7 @@ impl Inner {
                             .send(Command(resp_array!["GET", cachekey]))
                             .await
                         {
-                            Err(e) => Err(Error::from(e)),
+                            Err(e) => Err(error::ErrorInternalServerError(e)),
                             Ok(res) => match res {
                                 Ok(val) => {
                                     match val {
@@ -277,10 +273,13 @@ impl Inner {
         let (value, jar) = if let Some(value) = value {
             (value, None)
         } else {
-            let value: String = iter::repeat(())
-                .map(|()| OsRng.sample(Alphanumeric))
-                .take(32)
-                .collect();
+            let value = String::from_utf8(
+                iter::repeat(())
+                    .map(|()| OsRng.sample(Alphanumeric))
+                    .take(32)
+                    .collect(),
+            )
+            .map_err(error::ErrorInternalServerError)?;
 
             // prepare session id cookie
             let mut cookie = Cookie::new(self.name.clone(), value.clone());
@@ -318,7 +317,7 @@ impl Inner {
                     .send(Command(resp_array!["SET", cachekey, body, "EX", &self.ttl]))
                     .await
                 {
-                    Err(e) => Err(Error::from(e)),
+                    Err(e) => Err(error::ErrorInternalServerError(e)),
                     Ok(redis_result) => match redis_result {
                         Ok(_) => {
                             if let Some(jar) = jar {
@@ -342,7 +341,7 @@ impl Inner {
         let cachekey = (self.cache_keygen)(&key);
 
         match self.addr.send(Command(resp_array!["DEL", cachekey])).await {
-            Err(e) => Err(Error::from(e)),
+            Err(e) => Err(error::ErrorInternalServerError(e)),
             Ok(res) => {
                 match res {
                     // redis responds with number of deleted records
@@ -360,7 +359,7 @@ impl Inner {
         let mut cookie = Cookie::named(self.name.clone());
         cookie.set_value("");
         cookie.set_max_age(Duration::zero());
-        cookie.set_expires(OffsetDateTime::now() - Duration::days(365));
+        cookie.set_expires(OffsetDateTime::now_utc() - Duration::days(365));
 
         let val = HeaderValue::from_str(&cookie.to_string())
             .map_err(error::ErrorInternalServerError)?;

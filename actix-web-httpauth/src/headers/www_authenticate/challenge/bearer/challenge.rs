@@ -2,9 +2,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::str;
 
-use actix_web::http::header::{
-    HeaderValue, IntoHeaderValue, InvalidHeaderValue,
-};
+use actix_web::http::header::{HeaderValue, IntoHeaderValue, InvalidHeaderValue};
 use bytes::{BufMut, Bytes, BytesMut};
 
 use super::super::Challenge;
@@ -135,7 +133,7 @@ impl fmt::Display for Bearer {
 impl IntoHeaderValue for Bearer {
     type Error = InvalidHeaderValue;
 
-    fn try_into(self) -> Result<HeaderValue, <Self as IntoHeaderValue>::Error> {
+    fn try_into_value(self) -> Result<HeaderValue, <Self as IntoHeaderValue>::Error> {
         HeaderValue::from_maybe_shared(self.to_bytes())
     }
 }

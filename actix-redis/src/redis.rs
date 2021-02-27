@@ -27,7 +27,7 @@ impl Message for Command {
 pub struct RedisActor {
     addr: String,
     backoff: ExponentialBackoff,
-    cell: Option<actix::io::FramedWrite<WriteHalf<TcpStream>, RespCodec>>,
+    cell: Option<actix::io::FramedWrite<RespValue, WriteHalf<TcpStream>, RespCodec>>,
     queue: VecDeque<oneshot::Sender<Result<RespValue, Error>>>,
 }
 
@@ -36,8 +36,10 @@ impl RedisActor {
     pub fn start<S: Into<String>>(addr: S) -> Addr<RedisActor> {
         let addr = addr.into();
 
-        let mut backoff = ExponentialBackoff::default();
-        backoff.max_elapsed_time = None;
+        let backoff = ExponentialBackoff {
+            max_elapsed_time: None,
+            ..Default::default()
+        };
 
         Supervisor::start(|_| RedisActor {
             addr,
